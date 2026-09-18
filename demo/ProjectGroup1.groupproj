@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{3E278513-52EB-431B-A4DE-304E80E136ED}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="..\packages\VPFDPagedDataSet.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="VPFDPagingDemo.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="VPFDPagedDataSet">
+        <MSBuild Projects="..\packages\VPFDPagedDataSet.dproj"/>
+    </Target>
+    <Target Name="VPFDPagedDataSet:Clean">
+        <MSBuild Projects="..\packages\VPFDPagedDataSet.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="VPFDPagedDataSet:Make">
+        <MSBuild Projects="..\packages\VPFDPagedDataSet.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="VPFDPagingDemo">
+        <MSBuild Projects="VPFDPagingDemo.dproj"/>
+    </Target>
+    <Target Name="VPFDPagingDemo:Clean">
+        <MSBuild Projects="VPFDPagingDemo.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="VPFDPagingDemo:Make">
+        <MSBuild Projects="VPFDPagingDemo.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="VPFDPagedDataSet;VPFDPagingDemo"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="VPFDPagedDataSet:Clean;VPFDPagingDemo:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="VPFDPagedDataSet:Make;VPFDPagingDemo:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

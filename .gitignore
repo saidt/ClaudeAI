@@ -1,0 +1,39 @@
+*.old
+*.dcu
+
+# Delphi compiled output
+*.dcu
+*.exe
+*.bpl
+*.dcp
+
+# Delphi generated resource files
+*.res
+
+# Build output directories
+Win32/
+Win64/
+
+# Delphi IDE / temp files
+*.~*
+*.local
+*.dsk
+*.dproj.local
+*.identcache
+*.projdata
+*.tvsconfig
+*.stat
+*.skincfg
+__history/
+__recovery/
+.svn
+.rsrc/
+ 
+# Divers
+Thumbs.db
+*.zip
+*.rar
+*.exe*
+*.ini
+*.bpd
+*.log

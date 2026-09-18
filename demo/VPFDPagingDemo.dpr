@@ -2,14 +2,14 @@ program VPFDPagingDemo;
 
 uses
   Vcl.Forms,
-  uMain in 'uMain.pas' {MainForm},
-  VPFD.PagedDataSet in '..\src\VPFD.PagedDataSet.pas';
+  VPFD.PagedDataSet in '..\src\VPFD.PagedDataSet.pas',
+  Main in 'Main.pas' {Form4};
 
 {$R *.res}
 
 begin
   Application.Initialize;
   Application.MainFormOnTaskbar := True;
-  Application.CreateForm(TMainForm, MainForm);
+  Application.CreateForm(TForm4, Form4);
   Application.Run;
 end.

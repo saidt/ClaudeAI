@@ -173,7 +173,6 @@ type
     function GetBookmarkFlag(Buffer: TRecordBuffer): TBookmarkFlag; override;
     procedure SetBookmarkFlag(Buffer: TRecordBuffer; Value: TBookmarkFlag); override;
     procedure SetBookmarkData(Buffer: TRecordBuffer; Data: Pointer); override;
-    function GetFieldData(Field: TField; var Buffer: TValueBuffer): Boolean; override;
     procedure SetFieldData(Field: TField; Buffer: TValueBuffer); override;
     function GetRecord(Buffer: TRecordBuffer; GetMode: TGetMode; DoCheck: Boolean): TGetResult; override;
     function GetRecordSize: Word; override;
@@ -209,6 +208,7 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
 
+    function GetFieldData(Field: TField; var Buffer: TValueBuffer): Boolean; override;
     function Locate(const KeyFields: string; const KeyValues: Variant;
       Options: TLocateOptions): Boolean; override;
 
