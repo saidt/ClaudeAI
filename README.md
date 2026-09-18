@@ -23,12 +23,20 @@ still reflects the *real*, server-computed total.
 ## Files
 
 ```
-src/VPFD.PagedDataSet.pas   - the component (the actual deliverable)
-src/VPFD.Register.pas       - IDE design-time registration (RegisterComponents)
-packages/VPFDPagedDataSet.dpk - runtime/design-time package to install in the IDE
-demo/VPFDPagingDemo.dpr     - a runnable VCL demo (Customers/Orders master-detail)
-demo/uMain.pas / uMain.dfm
+src/VPFD.PagedDataSet.pas       - the component (the actual deliverable)
+src/VPFD.Register.pas           - IDE design-time registration (RegisterComponents)
+packages/VPFDPagedDataSet.dpk   - runtime/design-time package to install in the IDE
+packages/VPFDPagedDataSet.dpr/.dproj  - IDE-managed project files for the package
+demo/VPFDPagingDemo.dpr/.dproj  - a runnable VCL demo project
+demo/ProjectGroup1.groupproj    - project group (package + demo)
+demo/Main.pas / Main.dfm        - the demo form, with a TVPFDPagedDataSet
+                                   dropped and configured at design time
 ```
+
+The demo form (`Main.dfm`) uses a third-party filtering grid,
+`TFltrDBGrid` (unit `FltrBGrid`), for `FltrDBGrid1` — swap that for a plain
+`TDBGrid` if you don't have that component installed; nothing else in this
+repo depends on it.
 
 ## How it works
 
@@ -37,7 +45,7 @@ demo/uMain.pas / uMain.dfm
   sort/filter/master change), the entire local cache is thrown away and
   replaced, in a single round trip, by:
   ```sql
-  SELECT * FROM (<BaseSQL>) x WHERE <ServerFilter/MasterFilter> ORDER BY <SortFields>
+  SELECT * FROM (<BaseSQL>) x WHERE <SqlFilter/MasterFilter> ORDER BY <OrderBy>
   OFFSET :off ROWS FETCH NEXT :pagesize ROWS ONLY
   ```
   Only that page (≤ `PageSize` rows) is ever held in memory, in a small
@@ -54,8 +62,8 @@ demo/uMain.pas / uMain.dfm
   Dragging the grid's scrollbar thumb to an arbitrary position jumps straight
   to the page that contains that row — it never walks the pages in between.
 
-* **Sorting / filtering**: `SortFields` (`ORDER BY` fragment) and
-  `ServerFilter` (`WHERE` fragment, with `FilterParams` for safe
+* **Sorting / filtering**: `OrderBy` (`ORDER BY` fragment) and
+  `SqlFilter` (`WHERE` fragment, with `FilterParams` for safe
   parameter binding) are applied **on the server**. Changing either
   invalidates the cache (and, for the filter, the row count) and repositions
   to the first record.
@@ -63,7 +71,7 @@ demo/uMain.pas / uMain.dfm
   > The inherited `Filter`/`Filtered`/`OnFilterRecord` (client-side,
   > whole-result-set) mechanism is intentionally blocked — it's incompatible
   > with "only one page in memory". `SetFiltered(True)` raises
-  > `EVPFDError` telling you to use `ServerFilter` instead.
+  > `EVPFDError` telling you to use `SqlFilter` instead.
 
 * **CRUD**: dynamic single-table SQL generated from `TableName` + `KeyFields`:
   * `INSERT INTO <TableName> (...) OUTPUT INSERTED.* VALUES (...)` — SQL
@@ -83,7 +91,7 @@ demo/uMain.pas / uMain.dfm
 
 * **Master/Detail**: standard `MasterSource` + `MasterFields`/`DetailFields`,
   implemented with the VCL's own `TMasterDataLink` helper — the detail
-  dataset's `ServerFilter`-equivalent (`FMasterFilter`) is rebuilt from the
+  dataset's `SqlFilter`-equivalent (`FMasterFilter`) is rebuilt from the
   master row's current field values on every master scroll, and the detail
   cache/count are invalidated and repositioned to `First`.
 
@@ -104,9 +112,9 @@ VPQuery.Connection  := FDConnection1;                 // any open TFDConnection 
 VPQuery.BaseSQL      := 'SELECT CustomerID, CompanyName, City, Country FROM dbo.Customers';
 VPQuery.TableName    := 'dbo.Customers';               // for CRUD
 VPQuery.KeyFields     := 'CustomerID';                 // primary key, for CRUD/Locate/repositioning
-VPQuery.SortFields    := 'CompanyName';                // ORDER BY (required by OFFSET/FETCH)
+VPQuery.OrderBy    := 'CompanyName';                // ORDER BY (required by OFFSET/FETCH)
 VPQuery.PageSize      := 20;
-VPQuery.ServerFilter  := 'Country = :Ctry';
+VPQuery.SqlFilter  := 'Country = :Ctry';
 VPQuery.FilterParams.CreateParam(ftString, 'Ctry', ptInput).AsString := 'France';
 VPQuery.Active        := True;
 
@@ -121,8 +129,10 @@ Orders.MasterFields  := 'CustomerID';
 Orders.DetailFields  := 'CustomerID';
 ```
 
-See `demo/uMain.pas` for a full runnable example (Customers/Orders,
-filter+sort bar, navigation buttons, Insert/Delete/Post/Cancel, Locate).
+See `demo/Main.pas` / `demo/Main.dfm` for a minimal design-time example:
+a `TFDConnection`, a `TVPFDPagedDataSet` (`BaseSQL`/`KeyFields`/`Connection`
+set as plain published-property values, Object Inspector style) and a grid
+bound through a `TDataSource`, opened on `FormCreate`.
 
 ## Installing the design-time package
 
@@ -139,7 +149,7 @@ filter+sort bar, navigation buttons, Insert/Delete/Post/Cancel, Locate).
 * SQL Server 2012 or later (for `OFFSET … FETCH NEXT`).
 * `BaseSQL` must be a plain `SELECT` (no trailing `ORDER BY`/`;`) that SQL
   Server accepts wrapped as a derived table: `SELECT * FROM (<BaseSQL>) x`.
-* `SortFields` or `KeyFields` must be set before `Active := True` (needed as
+* `OrderBy` or `KeyFields` must be set before `Active := True` (needed as
   the mandatory `ORDER BY` for `OFFSET/FETCH`).
 * CRUD targets a single physical table (`TableName`) — for multi-table
   `BaseSQL` (joins/views), either point `TableName` at the specific
@@ -148,21 +158,20 @@ filter+sort bar, navigation buttons, Insert/Delete/Post/Cancel, Locate).
 
 ## A note on how this was written
 
-This unit was written and reviewed carefully against the documented
-`TDataSet` abstract-method contract (cross-checked against several modern,
-actively-maintained open-source `TDataSet` descendants — mORMot's
-`TSynVirtualDataSet` and JEDI VCL's `TJvMemoryData` — to pin down the exact
-Delphi 12.3-era signatures, e.g. `GetFieldData`/`SetFieldData` taking
-`TValueBuffer`, bookmark methods taking `Pointer`, `TRecordBuffer = PByte`),
-but it was **not compiled** in this environment (no Delphi toolchain is
-available here). Build it in the IDE and fix up anything the compiler
-flags — the design itself (buffer layout, paging, CRUD, master/detail) is
-sound; the risk, if any, is a minor per-Delphi-version signature mismatch
-in one of the `TDataSet` overrides. If you hit a "signature doesn't match
-inherited" error, the first places to check are `InternalCancel`,
-`InternalAddRecord`, and `GetActiveRecBuf` (the last one isn't inherited at
-all — it's a private helper modelled on the standard recipe, so a mismatch
-there would be a genuine bug, not a version issue).
+This unit was originally written without access to a Delphi compiler, based
+on the documented `TDataSet` abstract-method contract cross-checked against
+several modern, actively-maintained open-source `TDataSet` descendants
+(mORMot's `TSynVirtualDataSet`, JEDI VCL's `TJvMemoryData`). It has since
+been built against a real Delphi 12.3 + FireDAC install; only one fix was
+needed as a result: `GetFieldData` has to be declared in the `public`
+section (its visibility in `TDataSet` itself is public, not protected —
+`SetFieldData` stays `protected`, matching `TDataSet`). If you hit a
+"signature doesn't match inherited" error on anything else, the first
+places to check are `InternalCancel` and `InternalAddRecord` (both
+correctly-guessed so far, but the least independently verified); a mismatch
+in `GetActiveRecBuf` would be a genuine bug rather than a version issue,
+since it isn't an inherited method at all — it's a private helper modelled
+on the standard recipe.
 
 ## Known limitations (by design, documented rather than hidden)
 

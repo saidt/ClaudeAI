@@ -12,7 +12,7 @@ unit VPFD.PagedDataSet;
   * TFDQuery is used internally, as a *tool*, not as the ancestor: this class
     inherits directly from TDataSet, so it fully controls buffering.
   * Paging is implemented with SQL Server's OFFSET/FETCH NEXT (requires SQL
-    Server 2012+). ORDER BY is mandatory for OFFSET/FETCH, so SortFields (or,
+    Server 2012+). ORDER BY is mandatory for OFFSET/FETCH, so OrderBy (or,
     failing that, KeyFields) is always applied.
   * "Only the last fetched page is in memory": every time a record outside
     the currently cached page is requested (grid scroll past the cached
@@ -51,7 +51,7 @@ unit VPFD.PagedDataSet;
   * The base TDataSet.Filter/Filtered/OnFilterRecord mechanism is
     intentionally blocked (SetFiltered raises) because client-side,
     whole-result-set filtering is incompatible with "only one page in
-    memory". Use the ServerFilter / FilterParams properties instead, which
+    memory". Use the SqlFilter / FilterParams properties instead, which
     are translated into a real SQL WHERE clause.
   * Optimistic concurrency is limited to "0 rows affected => raise"; there
     is no row-version/timestamp column support out of the box (an easy
@@ -97,9 +97,9 @@ type
                                 // the auto-inc key) to exclude from INSERT/UPDATE,
                                 // e.g. computed columns or columns with defaults
     FPageSize: Integer;
-    FServerFilter: string;     // raw SQL WHERE fragment (no WHERE keyword)
-    FSortFields: string;       // raw SQL ORDER BY fragment (no ORDER BY keyword)
-    FFilterParams: TParams;    // named params referenced by ServerFilter
+    FSqlFilter: string;     // raw SQL WHERE fragment (no WHERE keyword)
+    FOrderBy: string;       // raw SQL ORDER BY fragment (no ORDER BY keyword)
+    FFilterParams: TParams;    // named params referenced by SqlFilter
 
     // ---- master/detail --------------------------------------------------
     FMasterLink: TMasterDataLink;
@@ -130,8 +130,8 @@ type
     procedure SetTableName(const Value: string);
     procedure SetKeyFields(const Value: string);
     procedure SetPageSize(const Value: Integer);
-    procedure SetServerFilter(const Value: string);
-    procedure SetSortFields(const Value: string);
+    procedure SetSqlFilter(const Value: string);
+    procedure SetOrderBy(const Value: string);
     function GetMasterSource: TDataSource;
     procedure SetMasterSource(const Value: TDataSource);
     procedure SetMasterFields(const Value: string);
@@ -225,8 +225,8 @@ type
     property AutoIncKey: Boolean read FAutoIncKey write FAutoIncKey default True;
     property ReadOnlyFields: string read FReadOnlyFields write FReadOnlyFields;
     property PageSize: Integer read FPageSize write SetPageSize default 20;
-    property ServerFilter: string read FServerFilter write SetServerFilter;
-    property SortFields: string read FSortFields write SetSortFields;
+    property SqlFilter: string read FSqlFilter write SetSqlFilter;
+    property OrderBy: string read FOrderBy write SetOrderBy;
     property FilterParams: TParams read FFilterParams write FFilterParams;
 
     property MasterSource: TDataSource read GetMasterSource write SetMasterSource;
@@ -340,22 +340,22 @@ begin
   end;
 end;
 
-procedure TVPFDPagedDataSet.SetServerFilter(const Value: string);
+procedure TVPFDPagedDataSet.SetSqlFilter(const Value: string);
 begin
-  if FServerFilter <> Value then
+  if FSqlFilter <> Value then
   begin
-    FServerFilter := Value;
+    FSqlFilter := Value;
     InvalidateCache;
     InvalidateCount;
     if Active then First;
   end;
 end;
 
-procedure TVPFDPagedDataSet.SetSortFields(const Value: string);
+procedure TVPFDPagedDataSet.SetOrderBy(const Value: string);
 begin
-  if FSortFields <> Value then
+  if FOrderBy <> Value then
   begin
-    FSortFields := Value;
+    FOrderBy := Value;
     InvalidateCache;
     if Active then First;
   end;
@@ -367,7 +367,7 @@ begin
     raise EVPFDError.Create(
       'TVPFDPagedDataSet does not support the client-side Filtered/Filter ' +
       'mechanism (it would require scanning and caching the whole result ' +
-      'set). Use the ServerFilter / FilterParams properties instead.');
+      'set). Use the SqlFilter / FilterParams properties instead.');
   inherited SetFiltered(Value);
 end;
 
@@ -527,8 +527,8 @@ var
 begin
   Parts := TStringList.Create;
   try
-    if Trim(FServerFilter) <> '' then
-      Parts.Add('(' + FServerFilter + ')');
+    if Trim(FSqlFilter) <> '' then
+      Parts.Add('(' + FSqlFilter + ')');
     if Trim(FMasterFilter) <> '' then
       Parts.Add('(' + FMasterFilter + ')');
     if Parts.Count = 0 then
@@ -543,12 +543,12 @@ function TVPFDPagedDataSet.BuildOrderByClause: string;
 var
   Effective: string;
 begin
-  Effective := Trim(FSortFields);
+  Effective := Trim(FOrderBy);
   if Effective = '' then
     Effective := Trim(FKeyFields);
   if Effective = '' then
     raise EVPFDError.Create(
-      'SortFields (or, failing that, KeyFields) must be set: SQL Server''s ' +
+      'OrderBy (or, failing that, KeyFields) must be set: SQL Server''s ' +
       'OFFSET/FETCH NEXT paging requires a deterministic ORDER BY.');
   Result := 'ORDER BY ' + Effective;
 end;
@@ -1407,5 +1407,13 @@ begin
     DoAfterScroll;
   end;
 end;
+
+initialization
+  // Lets a form's .dfm stream a TVPFDPagedDataSet instance (as a dropped
+  // component with published properties set at design time) even in a
+  // project that has not installed packages/VPFDPagedDataSet.dpk into the
+  // IDE — RegisterClass is what DFM/RTTI streaming uses to resolve a class
+  // name string to the actual class.
+  RegisterClass(TVPFDPagedDataSet);
 
 end.
