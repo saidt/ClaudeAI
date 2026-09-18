@@ -33,7 +33,7 @@ requires
   FireDAC,
   FireDACCommonDriver,
   FireDACCommon,
-  FireDAC.Phys.MSSQLDriver;
+  FireDACODBCDriver;
 
 contains
   VPFD.PagedDataSet in '..\src\VPFD.PagedDataSet.pas',

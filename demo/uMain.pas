@@ -25,7 +25,7 @@ uses
   Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Grids, Vcl.DBGrids, Data.DB,
   FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Error,
   FireDAC.Phys.Intf, FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async,
-  FireDAC.Phys, FireDAC.Phys.MSSQL, FireDAC.Phys.MSSQLDef,
+  FireDAC.Phys, FireDAC.Phys.ODBCBase, FireDAC.Phys.ODBC,
   FireDAC.ConsoleUI.Wait, FireDAC.Comp.Client,
   VPFD.PagedDataSet;
 
@@ -82,11 +82,15 @@ begin
   Height := 700;
   Position := poScreenCenter;
 
+  // ODBC connection to SQL Server. Either point at a pre-configured DSN:
+  //   DemoConnection.Params.Values['DSN'] := 'YourSqlServerDSN';
+  // or connect DSN-less, via the SQL Server ODBC/OLE DB driver name
+  // installed on this machine (adjust 'ODBC Driver 17 for SQL Server' to
+  // whatever driver you have installed):
   DemoConnection := TFDConnection.Create(Self);
-  DemoConnection.DriverName := 'MSSQL';
-  DemoConnection.Params.Values['Server'] := 'localhost';
-  DemoConnection.Params.Values['Database'] := 'YourDatabase';
-  DemoConnection.Params.Values['OSAuthent'] := 'Yes'; // or set User_Name/Password
+  DemoConnection.DriverName := 'ODBC';
+  DemoConnection.Params.Values['ODBCAdvanced'] := 'Driver={ODBC Driver 17 for SQL Server};Server=localhost;Database=YourDatabase;Trusted_Connection=Yes;';
+  DemoConnection.Params.Values['DriverID'] := 'MSSQL'; // FireDAC's SQL-Server-over-ODBC dialect
   DemoConnection.LoginPrompt := False;
 
   dsCustomers := TVPFDPagedDataSet.Create(Self);

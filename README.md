@@ -72,8 +72,13 @@ demo/uMain.pas / uMain.dfm
     row's real sorted position afterwards.
   * `UPDATE <TableName> SET ... WHERE <KeyFields> = <captured-before-edit values>`
   * `DELETE FROM <TableName> WHERE <KeyFields> = ...`
-  * Columns FireDAC reports as identity/computed (`faAutoGenerate`) or
-    read-only (`faReadonly`) are excluded from INSERT/UPDATE automatically.
+  * Excluded from INSERT/UPDATE automatically: any field with `TField.ReadOnly
+    = True`, plus (for INSERT only, when `AutoIncKey` is `True`, the default)
+    a single-field `KeyFields` — the common IDENTITY-primary-key case. List
+    any other server-generated/computed columns in `ReadOnlyFields`
+    (comma/semicolon separated) to exclude them too. This is explicit rather
+    than auto-detected from driver metadata, because that metadata is often
+    unreliable once `BaseSQL` is wrapped in a derived-table probe query.
   * A 0-rows-affected UPDATE raises (simple optimistic-concurrency guard).
 
 * **Master/Detail**: standard `MasterSource` + `MasterFields`/`DetailFields`,
@@ -127,7 +132,10 @@ filter+sort bar, navigation buttons, Insert/Delete/Post/Cancel, Locate).
 
 ## Requirements / assumptions
 
-* Delphi 12.3, FireDAC, `FireDAC.Phys.MSSQLDriver`.
+* Delphi 12.3, FireDAC, connecting to SQL Server via the ODBC driver
+  (`FireDACODBCDriver` in the package's `requires`, `DriverName := 'ODBC'`
+  on the `TFDConnection`, with `Params.Values['DriverID'] := 'MSSQL'` so
+  FireDAC applies its SQL-Server-over-ODBC SQL dialect).
 * SQL Server 2012 or later (for `OFFSET … FETCH NEXT`).
 * `BaseSQL` must be a plain `SELECT` (no trailing `ORDER BY`/`;`) that SQL
   Server accepts wrapped as a derived table: `SELECT * FROM (<BaseSQL>) x`.

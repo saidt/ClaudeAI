@@ -91,6 +91,11 @@ type
                                 // (no WHERE / ORDER BY / OFFSET)
     FTableName: string;        // physical, single, updatable table for CRUD
     FKeyFields: string;        // comma/semicolon separated primary key field(s)
+    FAutoIncKey: Boolean;      // True: a single-field KeyFields is server-generated
+                                // (e.g. an IDENTITY column) and left out of INSERT
+    FReadOnlyFields: string;   // extra comma/semicolon separated fields (besides
+                                // the auto-inc key) to exclude from INSERT/UPDATE,
+                                // e.g. computed columns or columns with defaults
     FPageSize: Integer;
     FServerFilter: string;     // raw SQL WHERE fragment (no WHERE keyword)
     FSortFields: string;       // raw SQL ORDER BY fragment (no ORDER BY keyword)
@@ -137,6 +142,7 @@ type
     function GetKeyFieldArray: TArray<string>;
     function QuoteIdent(const S: string): string;
     function JoinStrings(L: TStrings; const Sep: string): string;
+    function IsWritableField(const FieldName: string; ForInsert: Boolean): Boolean;
     function BuildWhereClause: string;
     function BuildOrderByClause: string;
     procedure BindFilterParams(Q: TFDQuery);
@@ -216,6 +222,8 @@ type
     property BaseSQL: string read FBaseSQL write SetBaseSQL;
     property TableName: string read FTableName write SetTableName;
     property KeyFields: string read FKeyFields write SetKeyFields;
+    property AutoIncKey: Boolean read FAutoIncKey write FAutoIncKey default True;
+    property ReadOnlyFields: string read FReadOnlyFields write FReadOnlyFields;
     property PageSize: Integer read FPageSize write SetPageSize default 20;
     property ServerFilter: string read FServerFilter write SetServerFilter;
     property SortFields: string read FSortFields write SetSortFields;
@@ -262,6 +270,7 @@ begin
   inherited Create(AOwner);
 
   FPageSize := 20;
+  FAutoIncKey := True;
   FPageStartIndex := -1;
   FPageRowCount := 0;
   FCurRec := -1;
@@ -470,6 +479,35 @@ begin
       Result := Result + Sep;
     Result := Result + L[i];
   end;
+end;
+
+function TVPFDPagedDataSet.IsWritableField(const FieldName: string; ForInsert: Boolean): Boolean;
+var
+  RO: TArray<string>;
+  Keys: TArray<string>;
+  i: Integer;
+  F: TField;
+begin
+  F := FindField(FieldName);
+  if Assigned(F) and F.ReadOnly then
+    Exit(False);
+
+  if Trim(FReadOnlyFields) <> '' then
+  begin
+    RO := FReadOnlyFields.Split([',', ';']);
+    for i := 0 to High(RO) do
+      if SameText(Trim(RO[i]), FieldName) then
+        Exit(False);
+  end;
+
+  if ForInsert and FAutoIncKey then
+  begin
+    Keys := GetKeyFieldArray;
+    if (Length(Keys) = 1) and SameText(Keys[0], FieldName) then
+      Exit(False);
+  end;
+
+  Result := True;
 end;
 
 function TVPFDPagedDataSet.GetKeyFieldArray: TArray<string>;
@@ -1123,7 +1161,7 @@ begin
     for i := 0 to FieldDefs.Count - 1 do
     begin
       FD := FieldDefs[i];
-      if (faAutoGenerate in FD.Attributes) or (faReadonly in FD.Attributes) then
+      if not IsWritableField(FD.Name, True) then
         Continue;
       Cols.Add(QuoteIdent(FD.Name));
       Parms.Add(':' + FD.Name);
@@ -1141,7 +1179,7 @@ begin
       for i := 0 to FieldDefs.Count - 1 do
       begin
         FD := FieldDefs[i];
-        if (faAutoGenerate in FD.Attributes) or (faReadonly in FD.Attributes) then
+        if not IsWritableField(FD.Name, True) then
           Continue;
         Q.ParamByName(FD.Name).Value := Row.FieldByName(FD.Name).Value;
       end;
@@ -1189,7 +1227,7 @@ begin
     for i := 0 to FieldDefs.Count - 1 do
     begin
       FD := FieldDefs[i];
-      if (faAutoGenerate in FD.Attributes) or (faReadonly in FD.Attributes) then
+      if not IsWritableField(FD.Name, False) then
         Continue;
       SetParts.Add(Format('%s = :%s', [QuoteIdent(FD.Name), FD.Name]));
     end;
@@ -1209,7 +1247,7 @@ begin
       for i := 0 to FieldDefs.Count - 1 do
       begin
         FD := FieldDefs[i];
-        if (faAutoGenerate in FD.Attributes) or (faReadonly in FD.Attributes) then
+        if not IsWritableField(FD.Name, False) then
           Continue;
         Q.ParamByName(FD.Name).Value := Row.FieldByName(FD.Name).Value;
       end;
