@@ -1018,8 +1018,19 @@ end;
 procedure TVPFDPagedDataSet.InternalInitFieldDefs;
 begin
   FieldDefs.Clear;
-  if Assigned(FSchemaQuery) and FSchemaQuery.Active then
-    FieldDefs.Assign(FSchemaQuery.FieldDefs);
+  // Self-sufficient on purpose: the IDE's Fields Editor ("Add fields...")
+  // calls FieldDefs.Update, which calls this directly, WITHOUT first
+  // setting Active := True - so this cannot rely on InternalOpen having
+  // already run DiscoverSchema. Probe on demand if that hasn't happened
+  // yet (harmless/no-op the normal case, where InternalOpen already
+  // called DiscoverSchema just before this).
+  if not Assigned(FConnection) then
+    Exit;
+  if Trim(FBaseSQL) = '' then
+    Exit;
+  if not (Assigned(FSchemaQuery) and FSchemaQuery.Active) then
+    DiscoverSchema;
+  FieldDefs.Assign(FSchemaQuery.FieldDefs);
 end;
 
 procedure TVPFDPagedDataSet.InternalOpen;

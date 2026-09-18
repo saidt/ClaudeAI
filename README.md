@@ -108,6 +108,14 @@ repo depends on it.
   itself only declares `FieldDefs` `public`), so you can right-click the
   component at design time → **Fields Editor** → **Add fields...** exactly
   as with `TFDQuery`/`TTable`, and get strongly-typed persistent fields.
+  "Add fields..." needs `Connection`, `BaseSQL` set and `Connection`
+  actually connected from the IDE (design-time connectivity to the
+  database, same as `TFDQuery`) — it probes the schema on demand
+  (`InternalInitFieldDefs` calls `DiscoverSchema` itself if it hasn't run
+  yet) and does **not** require the dataset's own `Active` to be `True`
+  first. If the list is still empty, connect `Connection` at design time
+  (Object Inspector → right-click `Connection` → Connect / set
+  `Connected := True`) before opening the Fields Editor.
   Auto-created (non-persistent) fields also get `ReadOnly` reset to
   `False` after creation: FireDAC's schema probe goes through a derived
   table (`SELECT TOP 0 * FROM (...) x`), and through that wrapper it
@@ -203,6 +211,12 @@ real bugs surfaced and were fixed as a result:
   row in it is mid-edit/insert (a grid's background row-lookahead could
   otherwise trigger a reload that corrupts the in-progress edit) —
   belt-and-braces alongside the fixes above, not a substitute for them.
+* `InternalInitFieldDefs` originally only populated `FieldDefs` from a
+  schema probe that had already run as a side effect of `InternalOpen` -
+  so the IDE's **Add fields...** dialog (which calls `FieldDefs.Update`
+  directly, without setting `Active := True` first) always saw an empty
+  list. Fixed by making it self-sufficient: it now runs the schema probe
+  itself on demand if one hasn't happened yet.
 
 If you hit a "signature doesn't match inherited" error on anything else,
 the first places to check are `InternalCancel` and `InternalAddRecord`
