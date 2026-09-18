@@ -51,7 +51,7 @@ unit VPFD.PagedDataSet;
   * The base TDataSet.Filter/Filtered/OnFilterRecord mechanism is
     intentionally blocked (SetFiltered raises) because client-side,
     whole-result-set filtering is incompatible with "only one page in
-    memory". Use the SqlFilter / FilterParams properties instead, which
+    memory". Use the FilterSQL / FilterParams properties instead, which
     are translated into a real SQL WHERE clause.
   * Optimistic concurrency is limited to "0 rows affected => raise"; there
     is no row-version/timestamp column support out of the box (an easy
@@ -97,9 +97,9 @@ type
                                 // the auto-inc key) to exclude from INSERT/UPDATE,
                                 // e.g. computed columns or columns with defaults
     FPageSize: Integer;
-    FSqlFilter: string;     // raw SQL WHERE fragment (no WHERE keyword)
+    FFilterSQL: string;     // raw SQL WHERE fragment (no WHERE keyword)
     FOrderBy: string;       // raw SQL ORDER BY fragment (no ORDER BY keyword)
-    FFilterParams: TParams;    // named params referenced by SqlFilter
+    FFilterParams: TParams;    // named params referenced by FilterSQL
 
     // ---- master/detail --------------------------------------------------
     FMasterLink: TMasterDataLink;
@@ -130,7 +130,7 @@ type
     procedure SetTableName(const Value: string);
     procedure SetKeyFields(const Value: string);
     procedure SetPageSize(const Value: Integer);
-    procedure SetSqlFilter(const Value: string);
+    procedure SetFilterSQL(const Value: string);
     procedure SetOrderBy(const Value: string);
     function GetMasterSource: TDataSource;
     procedure SetMasterSource(const Value: TDataSource);
@@ -201,9 +201,19 @@ type
     procedure DoBeforeEdit; override;
     procedure DoBeforeInsert; override;
 
-    // block the base client-side filter mechanism: it would force scanning
-    // (and caching) the whole result set, defeating "only one page in RAM"
+    // Filtered toggles whether FilterSQL is included in the server-side
+    // WHERE clause (MasterFilter, from master/detail, is always applied
+    // regardless of Filtered). This does NOT use the base TDataSet
+    // client-side filter/OnFilterRecord scanning mechanism - it never
+    // fires OnFilterRecord, since that would mean walking the whole
+    // result set locally, defeating "only one page in RAM".
     procedure SetFiltered(Value: Boolean); override;
+
+    // Writable datasets must report this; the base TDataSet default is
+    // False, which otherwise leaves Edit/Insert silently unable to reach
+    // dsEdit/dsInsert (surfacing downstream as "not in edit or insert
+    // mode" the moment a grid tries to write a field).
+    function GetCanModify: Boolean; override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -225,7 +235,10 @@ type
     property AutoIncKey: Boolean read FAutoIncKey write FAutoIncKey default True;
     property ReadOnlyFields: string read FReadOnlyFields write FReadOnlyFields;
     property PageSize: Integer read FPageSize write SetPageSize default 20;
-    property SqlFilter: string read FSqlFilter write SetSqlFilter;
+    // FilterSQL is a raw SQL WHERE fragment (no WHERE keyword), only
+    // actually applied to the query while Filtered = True.
+    property FilterSQL: string read FFilterSQL write SetFilterSQL;
+    property Filtered;
     property OrderBy: string read FOrderBy write SetOrderBy;
     property FilterParams: TParams read FFilterParams write FFilterParams;
 
@@ -255,7 +268,8 @@ type
     property AfterRefresh;
     property OnCalcFields;
     property OnNewRecord;
-    property OnFilterRecord;
+    // Note: OnFilterRecord is intentionally NOT republished - it would
+    // never fire (see the Filtered/SetFiltered comment above).
   end;
 
 implementation
@@ -340,14 +354,19 @@ begin
   end;
 end;
 
-procedure TVPFDPagedDataSet.SetSqlFilter(const Value: string);
+procedure TVPFDPagedDataSet.SetFilterSQL(const Value: string);
 begin
-  if FSqlFilter <> Value then
+  if FFilterSQL <> Value then
   begin
-    FSqlFilter := Value;
-    InvalidateCache;
-    InvalidateCount;
-    if Active then First;
+    FFilterSQL := Value;
+    // Only needs to requery if the filter is actually in effect; if
+    // Filtered = False, turning it on later will pick up the new text.
+    if Filtered then
+    begin
+      InvalidateCache;
+      InvalidateCount;
+      if Active then First;
+    end;
   end;
 end;
 
@@ -362,13 +381,22 @@ begin
 end;
 
 procedure TVPFDPagedDataSet.SetFiltered(Value: Boolean);
+var
+  Changed: Boolean;
 begin
-  if Value then
-    raise EVPFDError.Create(
-      'TVPFDPagedDataSet does not support the client-side Filtered/Filter ' +
-      'mechanism (it would require scanning and caching the whole result ' +
-      'set). Use the SqlFilter / FilterParams properties instead.');
+  Changed := Filtered <> Value;
   inherited SetFiltered(Value);
+  if Changed then
+  begin
+    InvalidateCache;
+    InvalidateCount;
+    if Active then First;
+  end;
+end;
+
+function TVPFDPagedDataSet.GetCanModify: Boolean;
+begin
+  Result := True;
 end;
 
 // ---------------------------------------------------------------------------
@@ -527,8 +555,8 @@ var
 begin
   Parts := TStringList.Create;
   try
-    if Trim(FSqlFilter) <> '' then
-      Parts.Add('(' + FSqlFilter + ')');
+    if Filtered and (Trim(FFilterSQL) <> '') then
+      Parts.Add('(' + FFilterSQL + ')');
     if Trim(FMasterFilter) <> '' then
       Parts.Add('(' + FMasterFilter + ')');
     if Parts.Count = 0 then

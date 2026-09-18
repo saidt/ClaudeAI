@@ -45,7 +45,7 @@ repo depends on it.
   sort/filter/master change), the entire local cache is thrown away and
   replaced, in a single round trip, by:
   ```sql
-  SELECT * FROM (<BaseSQL>) x WHERE <SqlFilter/MasterFilter> ORDER BY <OrderBy>
+  SELECT * FROM (<BaseSQL>) x WHERE <FilterSQL/MasterFilter> ORDER BY <OrderBy>
   OFFSET :off ROWS FETCH NEXT :pagesize ROWS ONLY
   ```
   Only that page (≤ `PageSize` rows) is ever held in memory, in a small
@@ -62,16 +62,24 @@ repo depends on it.
   Dragging the grid's scrollbar thumb to an arbitrary position jumps straight
   to the page that contains that row — it never walks the pages in between.
 
-* **Sorting / filtering**: `OrderBy` (`ORDER BY` fragment) and
-  `SqlFilter` (`WHERE` fragment, with `FilterParams` for safe
-  parameter binding) are applied **on the server**. Changing either
-  invalidates the cache (and, for the filter, the row count) and repositions
-  to the first record.
+* **Sorting / filtering**: `OrderBy` (`ORDER BY` fragment) and `FilterSQL`
+  (`WHERE` fragment, with `FilterParams` for safe parameter binding) are
+  applied **on the server**. `FilterSQL` only takes effect while the
+  inherited `Filtered` property is `True` — set `FilterSQL` then flip
+  `Filtered := True` to turn the filter on, or `Filtered := False` to turn
+  it off without losing the text (handy for a checkbox next to a filter
+  edit box). Changing `FilterSQL` while `Filtered = True`, or changing
+  `Filtered` itself, invalidates the cache and row count and repositions to
+  the first record; changing `FilterSQL` while `Filtered = False` is a
+  no-op until it's turned on. Master/detail filtering (`MasterFilter`,
+  internal) is always applied regardless of `Filtered`.
 
-  > The inherited `Filter`/`Filtered`/`OnFilterRecord` (client-side,
-  > whole-result-set) mechanism is intentionally blocked — it's incompatible
-  > with "only one page in memory". `SetFiltered(True)` raises
-  > `EVPFDError` telling you to use `SqlFilter` instead.
+  > This reuses the base `Filtered` property for the on/off switch, but
+  > NOT the base client-side `Filter`/`OnFilterRecord` scanning mechanism
+  > — `OnFilterRecord` is intentionally not republished and never fires,
+  > since evaluating it would mean walking the whole result set locally,
+  > defeating "only one page in RAM". `FilterSQL` is real SQL, not a
+  > client-side filter expression.
 
 * **CRUD**: dynamic single-table SQL generated from `TableName` + `KeyFields`:
   * `INSERT INTO <TableName> (...) OUTPUT INSERTED.* VALUES (...)` — SQL
@@ -91,7 +99,7 @@ repo depends on it.
 
 * **Master/Detail**: standard `MasterSource` + `MasterFields`/`DetailFields`,
   implemented with the VCL's own `TMasterDataLink` helper — the detail
-  dataset's `SqlFilter`-equivalent (`FMasterFilter`) is rebuilt from the
+  dataset's `FilterSQL`-equivalent (`FMasterFilter`) is rebuilt from the
   master row's current field values on every master scroll, and the detail
   cache/count are invalidated and repositioned to `First`.
 
@@ -114,8 +122,9 @@ VPQuery.TableName    := 'dbo.Customers';               // for CRUD
 VPQuery.KeyFields     := 'CustomerID';                 // primary key, for CRUD/Locate/repositioning
 VPQuery.OrderBy    := 'CompanyName';                // ORDER BY (required by OFFSET/FETCH)
 VPQuery.PageSize      := 20;
-VPQuery.SqlFilter  := 'Country = :Ctry';
+VPQuery.FilterSQL  := 'Country = :Ctry';
 VPQuery.FilterParams.CreateParam(ftString, 'Ctry', ptInput).AsString := 'France';
+VPQuery.Filtered      := True;                         // FilterSQL only applies while Filtered
 VPQuery.Active        := True;
 
 DataSource1.DataSet := VPQuery;                        // hook up TDBGrid etc. as usual
@@ -162,16 +171,25 @@ This unit was originally written without access to a Delphi compiler, based
 on the documented `TDataSet` abstract-method contract cross-checked against
 several modern, actively-maintained open-source `TDataSet` descendants
 (mORMot's `TSynVirtualDataSet`, JEDI VCL's `TJvMemoryData`). It has since
-been built against a real Delphi 12.3 + FireDAC install; only one fix was
-needed as a result: `GetFieldData` has to be declared in the `public`
-section (its visibility in `TDataSet` itself is public, not protected —
-`SetFieldData` stays `protected`, matching `TDataSet`). If you hit a
-"signature doesn't match inherited" error on anything else, the first
-places to check are `InternalCancel` and `InternalAddRecord` (both
-correctly-guessed so far, but the least independently verified); a mismatch
-in `GetActiveRecBuf` would be a genuine bug rather than a version issue,
-since it isn't an inherited method at all — it's a private helper modelled
-on the standard recipe.
+been built and exercised against a real Delphi 12.3 + FireDAC install, and
+two real bugs surfaced and were fixed as a result:
+
+* `GetFieldData` has to be declared in the `public` section (its visibility
+  in `TDataSet` itself is public, not protected — `SetFieldData` stays
+  `protected`, matching `TDataSet`).
+* `GetCanModify` was missing an override. `TDataSet`'s own default is
+  `False`; without overriding it, `Insert`/`Edit`/`Append` can silently
+  fail to reach `dsInsert`/`dsEdit`, which then surfaces as the confusing
+  downstream error **"Dataset not in edit or insert mode"** the moment a
+  grid tries to write a field value — it looks like an edit-state bug but
+  is really a missing `CanModify`. Fixed by overriding it to return `True`.
+
+If you hit a "signature doesn't match inherited" error on anything else,
+the first places to check are `InternalCancel` and `InternalAddRecord`
+(both correctly-guessed so far, but the least independently verified); a
+mismatch in `GetActiveRecBuf` would be a genuine bug rather than a version
+issue, since it isn't an inherited method at all — it's a private helper
+modelled on the standard recipe.
 
 ## Known limitations (by design, documented rather than hidden)
 
